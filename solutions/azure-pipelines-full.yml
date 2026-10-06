@@ -1,0 +1,100 @@
+# Lab 5 - CI + CD (dev, then prod with approval). Copy over azure-pipelines.yml.
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest      # self-hosted agent? replace with:  name: Default
+
+variables:
+  pythonVersion: '3.11'
+
+stages:
+  - stage: Build
+    displayName: Build and test
+    jobs:
+      - job: Test
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+
+          - script: pip install -r requirements.txt
+            displayName: Install dependencies
+
+          - script: flake8 src tests --max-line-length 100
+            displayName: Lint code
+
+          - script: python -m pytest -v --junitxml=test-results.xml
+            displayName: Run unit tests
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFiles: test-results.xml
+              testRunTitle: RetailFlow unit tests
+
+          - script: python -m src.clean_sales
+            displayName: Run pipeline on sample data
+
+          - publish: output
+            artifact: curated-data
+            displayName: Publish cleaned data
+
+  - stage: DeployDev
+    displayName: Deploy to dev
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    variables:
+      - group: retailflow-dev
+    jobs:
+      - deployment: UploadDev
+        environment: retailflow-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: curated-data
+                - task: AzureCLI@2
+                  displayName: Upload cleaned files to Blob Storage
+                  inputs:
+                    azureSubscription: sc-retailflow
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az storage blob upload-batch \
+                        --account-name $(storageAccount) \
+                        --destination curated \
+                        --destination-path sales/$(Build.BuildNumber) \
+                        --source $(Pipeline.Workspace)/curated-data \
+                        --auth-mode key --overwrite
+
+  - stage: DeployProd
+    displayName: Deploy to prod
+    dependsOn: DeployDev
+    variables:
+      - group: retailflow-prod
+    jobs:
+      - deployment: UploadProd
+        environment: retailflow-prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: curated-data
+                - task: AzureCLI@2
+                  displayName: Upload cleaned files to Blob Storage
+                  inputs:
+                    azureSubscription: sc-retailflow
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az storage blob upload-batch \
+                        --account-name $(storageAccount) \
+                        --destination curated \
+                        --destination-path sales/$(Build.BuildNumber) \
+                        --source $(Pipeline.Workspace)/curated-data \
+                        --auth-mode key --overwrite

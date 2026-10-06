@@ -1,0 +1,9 @@
+order_id,order_date,region,product,quantity,unit_price
+1001,2026-10-01,South,Laptop,2,55000
+1002,2026-10-01,North,Mouse,5,700
+1002,2026-10-01,North,Mouse,5,700
+1003,2026-10-02,West,Monitor,,12000
+1004,2026-10-02,South,Keyboard,3,1500
+1005,2026-10-03,East,Laptop,1,55000
+1006,2026-10-03,North,Monitor,2,
+1007,2026-10-03,West,Mouse,10,700
